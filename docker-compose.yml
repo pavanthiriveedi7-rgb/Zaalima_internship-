@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+
+  # ── Redis Feature Store ───────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: zaalima-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Recommendation API ────────────────────────────────────────────────
+  api:
+    build: .
+    container_name: zaalima-rec-api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - QUERY_TOWER_PATH=/app/models/query_tower
+      - FAISS_INDEX_PATH=/app/models/faiss_index
+    volumes:
+      - ./models:/app/models:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: "2.0"
+
+  # ── Prometheus Monitoring ──────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: zaalima-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+  # ── Grafana Dashboard ──────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: zaalima-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=zaalima2025
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+  grafana_data:
